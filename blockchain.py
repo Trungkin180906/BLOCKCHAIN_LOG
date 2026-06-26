@@ -1,93 +1,120 @@
-"""Định nghĩa cấu trúc 1 "Block" trong chuỗi Blockchain mô phỏng.
-Mỗi Block đóng vai trò như 1 "hộp" chứa:
-    - index          : Vị trí của Block trong chuỗi (0, 1, 2, ...)
-    - timestamp       : Thời điểm Block được tạo
-    - log_data        : Nội dung log gốc (raw) được gom lại (để dễ debug/đọc lại)
-    - log_hash        : Mã băm SHA-256 của log_data (đại diện "dấu vân tay" cho log)
-    - previous_hash   : Mã băm của Block ngay trước nó -> tạo sự liên kết (chaining)
-    - hash            : Mã băm của CHÍNH Block này (tính từ tất cả field bên trên)
-Nguyên lý quan trọng:
-    Hash của Block hiện tại được tính dựa trên cả "previous_hash" của Block trước.
-    => Nếu dữ liệu của 1 Block cũ bị sửa, hash của nó đổi, kéo theo toàn bộ
-       các Block phía sau bị "đứt xích" (previous_hash không còn khớp nữa)."""
-import hashlib#thư viện mã băm sha-256
-import time
-import json#thư viện xử lý json
-class block:
-    def __init__(self, index, log_data, previous_hash, log_hash=None, timestamp=None):
-        self.index=index#vị trí của block trong chuỗi
-        self.timestamp=timestamp if timestamp is not None else time.time()#time block được tạo
-        self.log_data=log_data#nội dung log gốc
-        self.log_hash=log_hash if log_hash is not None else self.calculate_log_hash(log_data)#mã băm 
-        self.previous_hash=previous_hash#mã băm của block trước
-        self.hash=self.calculate_hash()#mã băm của block hiện tại
+"""blockchain.py
+Định nghĩa class Blockchain: quản lý toàn bộ chuỗi các Block.
+Nhiệm vụ chính:
+    1. Tạo Genesis Block (block đầu tiên, previous_hash = "0").
+    2. add_block(): nối block mới vào cuối chuỗi.
+    3. is_chain_valid(): quét toàn bộ chuỗi để phát hiện block nào bị sửa.
+    4. find_block_by_log_hash(): hỗ trợ phần Audit Tool (Giai đoạn 4) tìm
+       xem 1 mã hash log có tồn tại/khớp trên chuỗi hay không."""
+from core.blocks import Block
 
-    @staticmethod#phương thức tĩnh, không cần tạo đối tượng
-    def calculate_log_hash(log_data):
-        """Băm nội dung log gốc bằng SHA-256.
-        Đây chính là bước "Ép ra dấu vân tay" cho cụm log vừa gom (batching).
-        Args: log_data (str): Nội dung log thô.
-        Returns:str: Chuỗi hash SHA-256 (dạng hex)."""
-        return hashlib.sha256(log_data.encode('utf-8')).hexdigest()#mã băm sha256 chuyển về hex
+class Blockchain:
+    def __init__(self):
+        self.chain=[]
+        self.chain.append(self.create_genesis_block())#tạo genesis block ngay khi khởi tạo chuỗi
+
+    def create_genesis_block(self):
+        """tạo block đầu tiên của chuỗi
+        previous_hash=0 vì ko có block trước đó
+        return block: object block đầu tiên của chuỗi"""
+        return Block(index=0, log_data='Genesis Block - khởi tạo chuỗi', previous_hash='0')#trả về object block đầu tiên 
     
-    def calculate_hash(self):
-        """Tính hash cho CHÍNH block này.
-        Cách làm:
-            1. Đóng gói (json.dumps) toàn bộ thông tin quan trọng của block
-               thành 1 chuỗi string có cấu trúc cố định (sort_keys=True để
-               đảm bảo thứ tự key luôn giống nhau -> hash luôn nhất quán).
-            2. Băm chuỗi đó bằng SHA-256.
-        Lưu ý: previous_hash được đưa vào cùng -> đây chính là bước "chaining"
-        (móc xích các block lại với nhau).
-        Returns:
-            str: Chuỗi hash SHA-256 (dạng hex) đại diện cho toàn bộ block."""
-        block_content={
-            'index':self.index,
-            'timestamp':self.timestamp,
-            'log_hash':self.log_hash,
-            'previous_hash':self.previous_hash,}#tạo dict chứa info block
-        block_string=json.dumps(block_content, sort_keys=True).encode()#chuyển dict thành chuỗi json
-        return hashlib.sha256(block_string).hexdigest()#băm chuỗi json thành hash sha256
+    def get_last_block(self)->Block:
+        """lấy block cuối cùng trong chuỗi
+        return block: object block cuối cùng trong chuỗi"""
+        return self.chain[-1]#trả về block cuối cùng trong list chain
     
-    def is_log_intact(self, log_data_to_check):
-        """ Kiểm tra xem 1 đoạn log_data đưa vào có khớp với log_hash đã lưu
-        trong block này không. Dùng cho việc đối soát (audit) từng block lẻ.
-        Args: log_data_to_check (str): Nội dung log cần kiểm tra.
-        Returns: bool: True nếu khớp (log nguyên vẹn), False nếu lệch (log đã bị sửa).
-        """
-        return self.calculate_log_hash(log_data_to_check)==self.log_hash
+    def add_block(self, new_block:Block)->Block:#thêm block
+        """tạo log mới chứa log_data, gắn previous_hash=hash của block 
+        cuối cùng trong chuỗi, rồi nối vào chuỗi
+        args: new_block: object block mới cần thêm vào chuỗi
+        return block: object block mới đã được thêm vào """
+        new_block.previous_hash=self.get_last_block().hash
+        new_block.hash=new_block.calculate_hash()
+        self.chain.append(new_block)
+        return new_block
     
-    def to_dict(self):
-        """chuyển block thành dict thuân (phục vụ việc lưu json, in ra màn hình)
-        return: dict: dict chứa thông tin block"""
-        return{
-            'index':self.index,
-            'timestamp':self.timestamp,
-            'log_data':self.log_data,
-            'log_hash':self.log_hash,
-            'previous_hash':self.previous_hash,
-            'hash':self.hash,}
-    
-    @classmethod#phương thức lớp, có thể gọi trực tiếp từ class mà ko cần tạo object
-    def from_dict(cls, data):
-        """dựng lại 1 object block từ dict 
-        args: data (dict): dict chứa thông tin block
-        return: block: object block được dựng lại từ dict 
-        để có thể phát hiện log đã bị sửa hay không 
-        """
-        block=cls(
-            index=data['index'],
-            log_data=data['log_data'],
-            previous_hash=data['previous_hash'],
-            log_hash=data['log_hash'],
-            timestamp=data['timestamp'],)#tạo object block từ dict
-        """gắn hash của block từ dict vào object block để có thể phát hiện log đã bị sửa hay ko"""
-        block.hash=data['hash']
-        return block
-    
-    def __repr__(self):#định nghĩa cách hiển thị block khi in
-        prev_hash_short=self.previous_hash[:10] if self.previous_hash!='0' else '0'
-        return (f'Block(index={self.index}, '
-                f'hash={self.hash[:10]}..., '
-                f'previous_hash={prev_hash_short}...)')
-    
+    ##lớp kiểm tra tính toàn vẹn
+    def is_chain_valid(self)->dict:
+        """quét toàn bộ chuỗi để phát hiện block bị sửa
+        Với mỗi block (trừ Genesis), kiểm tra 3 điều:
+        Duyệt từ block 1 đến cuối, kiểm tra 3 điều kiện:
+            1. Hash tính lại có khớp không?         → phát hiện data bị sửa
+            2. previous_hash có trỏ đúng block trước? → phát hiện đứt xích
+            3. log_hash có khớp với log_data không?   → phát hiện log bị sửa"""
+        error=[]
+        for i in range(1, len(self.chain)):#bỏ qua block đầu tiên 
+            current_block=self.chain[i]
+            previous_block=self.chain[i-1]
+
+            #check (a) hash của block có bị sửa hay ko
+            recalculated_hash=current_block.calculate_hash()#tính hash tổng thể từ các field hiện tại
+            if current_block.hash!=recalculated_hash:#nếu hash tổng thể ko khớp với hash đã lưu
+                error.append({
+                    "block_index": i,
+                    "error": (
+                        f"Hash không khớp! "
+                        f"Lưu: {current_block.hash[:16]}... | "
+                        f"Tính lại: {recalculated_hash[:16]}...")})
+            
+            #check (b) hash tổng thể có bị sửa hay ko
+            if current_block.previous_hash != previous_block.hash:
+                error.append({
+                    "block_index": i,
+                    "error": (
+                        f"Liên kết bị đứt! "
+                        f"previous_hash: {current_block.previous_hash[:16]}... "
+                        f"≠ hash block #{i-1}: {previous_block.hash[:16]}...")})
+            
+            #check (c) sợi dây liên kết với block trước có bị đứt
+            if not current_block.is_log_intact():
+                error.append({
+                    "block_index": i,
+                    "error": (
+                        f"Log Data bị sửa! "
+                        f"log_hash lưu: {current_block.log_hash[:16]}... "
+                        f"không khớp với log_data hiện tại.")})
+            
+        return {"valid"         : len(error) == 0,
+                "errors"        : error,
+                "blocks_checked": len(self.chain) - 1,}
+
+    #tấn công giả lập
+    def tamper_block(self, index:int, new_log_data:str)->dict:
+        if index<1 or index>=len(self.chain):
+            return {"success": False,
+                    "error"  : "Không thể sửa Genesis Block hoặc index vượt phạm vi."}
+        block=self.chain[index]
+        old_data=block.log_data
+
+        #sửa thẳng không tính lại hassh 
+        block.log_data=new_log_data
+        return {"success"     : True,
+                "block_index" : index,
+                "old_data"    : old_data,
+                "new_data"    : new_log_data,
+                "stored_hash" : block.hash,
+                "actual_hash" : block.calculate_hash(),
+                "hash_match"  : block.hash == block.calculate_hash(),}
+
+    def to_dict(self)->list[dict]:
+        """chuyển toàn bộ chain thành list[dict] để phục lưu trữ json"""
+        return [b.to_dict() for b in self.chain]#trả về list chứa dict của từng block
+        
+    def get_stats(self)->dict:
+        """dựng lại 1 object blockchain từ list[dict]
+        args: chain_data list[dict]: list chứa dict của từng block
+        return blockchain: object blockchain được dựng lại từ list[dict]"""
+        latest=self.get_last_block()
+        return {"total_blocks" : len(self.chain),
+               "latest_index" : latest.index,
+               "latest_hash"  : latest.hash,
+               "genesis_hash" : self.chain[0].hash,
+               "is_valid"     : self.is_chain_valid()["valid"],}
+        
+    def __len__(self):
+        return len(self.chain)
+        
+    def __repr__(self):
+        return f'Blockchain(block={len(self.chain)} valid={self.is_chain_valid()['valid']})'
+        
