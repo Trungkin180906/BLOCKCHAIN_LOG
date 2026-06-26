@@ -1,4 +1,4 @@
-from .blocks import block
-from .blockchain import blockchain
+from .blocks import Block
+from .blockchain import Blockchain
 
 __all__ = ["Block", "Blockchain"]
