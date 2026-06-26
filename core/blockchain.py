@@ -6,7 +6,7 @@ Nhiệm vụ chính:
     3. is_chain_valid(): quét toàn bộ chuỗi để phát hiện block nào bị sửa.
     4. find_block_by_log_hash(): hỗ trợ phần Audit Tool (Giai đoạn 4) tìm
        xem 1 mã hash log có tồn tại/khớp trên chuỗi hay không."""
-from core.blocks import Block
+from core.block import Block
 
 class Blockchain:
     def __init__(self):
@@ -116,5 +116,5 @@ class Blockchain:
         return len(self.chain)
         
     def __repr__(self):
-        return f'Blockchain(block={len(self.chain)} valid={self.is_chain_valid()['valid']})'
+        return f'Blockchain(block={len(self.chain)} valid={self.is_chain_valid()["valid"]})'
         
